@@ -1,7 +1,7 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -10,7 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/localitas/localitas-app-dictionary"
+	dictionary "github.com/localitas/localitas-app-dictionary"
+	"github.com/urfave/cli/v3"
 )
 
 var (
@@ -19,48 +20,68 @@ var (
 )
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Printf("dictionary-server %s (commit: %s)\n", version, commit)
-		os.Exit(0)
+	app := &cli.Command{
+		Name:    "dictionary-server",
+		Usage:   "dictionary app server",
+		Version: version,
+		Commands: []*cli.Command{
+			serveCommand(),
+		},
+		DefaultCommand: "serve",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return serveAction(ctx, cmd)
+		},
 	}
 
-	var (
-		listen   = flag.String("listen", ":0", "listen address")
-		basePath = flag.String("base-path", "/", "URL prefix for <base href>")
-		sources  = flag.String("sources", "dictionary,urban", "comma-separated lookup sources (dictionary,urban)")
-	)
-	flag.Parse()
+	if err := app.Run(context.Background(), os.Args); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	app := dictionary.New(*basePath, *sources)
+func serveCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "serve",
+		Usage: "Start the server",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "listen", Value: ":0", Usage: "listen address"},
+			&cli.StringFlag{Name: "base-path", Value: "/", Usage: "URL prefix for <base href>"},
+			&cli.StringFlag{Name: "sources", Value: "dictionary,urban", Usage: "comma-separated lookup sources"},
+		},
+		Action: serveAction,
+	}
+}
 
+func serveAction(ctx context.Context, cmd *cli.Command) error {
+	basePath := cmd.String("base-path")
+
+	sources := cmd.String("sources")
+
+	a := dictionary.New(basePath, sources)
 	mux := http.NewServeMux()
-	app.RegisterRoutes(mux)
+	a.RegisterRoutes(mux)
 	mux.HandleFunc("GET /health.json", dictionary.HandleHealth)
 
-	ln, err := net.Listen("tcp", *listen)
+	ln, err := net.Listen("tcp", cmd.String("listen"))
 	if err != nil {
-		log.Fatalf("listen: %v", err)
+		return fmt.Errorf("listen: %w", err)
 	}
 	addr := ln.Addr().(*net.TCPAddr)
 	fmt.Printf("dictionary-server listening on http://localhost:%d\n", addr.Port)
 
 	shutdown, err := dictionary.BroadcastMDNS(addr.Port, dictionary.DefaultHealth.Name)
 	if err != nil {
-		log.Printf("⚠️  mDNS broadcast failed: %v", err)
+		log.Printf("mDNS broadcast failed: %v", err)
 	}
 
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 		<-sig
-		log.Println("shutting down...")
 		if shutdown != nil {
 			shutdown()
 		}
 		os.Exit(0)
 	}()
 
-	if err := http.Serve(ln, mux); err != nil {
-		log.Fatalf("serve: %v", err)
-	}
+	return http.Serve(ln, mux)
 }

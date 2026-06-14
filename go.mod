@@ -2,7 +2,10 @@ module github.com/localitas/localitas-app-dictionary
 
 go 1.26.3
 
-require github.com/grandcat/zeroconf v1.0.0
+require (
+	github.com/grandcat/zeroconf v1.0.0
+	github.com/urfave/cli/v3 v3.9.1
+)
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
