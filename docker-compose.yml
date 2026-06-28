@@ -1,6 +1,7 @@
 services:
   web:
     image: ghcr.io/localitas/localitas-app-dictionary:latest
+    command: ["serve", "--listen", ":8000", "--base-path", "/apps/ext/dictionary/"]
     ports:
       - "${APP_PORT:-9205}:8000"
     environment:
