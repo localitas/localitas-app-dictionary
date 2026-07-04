@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -70,7 +71,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 
 	shutdown, err := dictionary.BroadcastMDNS(addr.Port, dictionary.DefaultHealth.Name)
 	if err != nil {
-		log.Printf("mDNS broadcast failed: %v", err)
+		slog.Warn("mDNS broadcast failed", "error", err)
 	}
 
 	go func() {
