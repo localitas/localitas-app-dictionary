@@ -15,6 +15,12 @@ const (
 	urbanBaseURL = "https://api.urbandictionary.com/v0/define?term="
 )
 
+// httpClient is a single pooled client shared across all lookups (created once,
+// never per request) so connections to the two upstream dictionary APIs are
+// reused instead of opening a fresh transport on every word lookup. http.Client
+// is safe for concurrent use, and LookupAll fans out to both APIs concurrently.
+var httpClient = &http.Client{Timeout: 10 * time.Second}
+
 func LookupAll(ctx context.Context, word string, sources map[string]bool) *LookupResult {
 	result := &LookupResult{Word: word, Entries: make([]*DictionaryEntry, 0)}
 
@@ -62,8 +68,7 @@ func Lookup(ctx context.Context, word string) (*DictionaryEntry, error) {
 	}
 	req.Header.Set("User-Agent", "Localitas Dictionary/1.0")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -100,8 +105,7 @@ func UrbanLookup(ctx context.Context, word string) (*DictionaryEntry, error) {
 	}
 	req.Header.Set("User-Agent", "Localitas Dictionary/1.0")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
