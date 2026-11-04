@@ -20,7 +20,11 @@ func (h *handler) handleLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := LookupAll(r.Context(), word, h.sources)
+	result, err := LookupAll(r.Context(), word, h.sources)
+	if err != nil {
+		writeErr(w, r, http.StatusBadGateway, "%v", err)
+		return
+	}
 	if len(result.Entries) == 0 {
 		writeErr(w, r, http.StatusNotFound, "no definition found for '%s'", word)
 		return

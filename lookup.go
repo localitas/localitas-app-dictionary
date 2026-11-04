@@ -3,14 +3,17 @@ package dictionary
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/localitas/localitas-go/httputil"
 )
 
-const (
+var (
 	apiBaseURL   = "https://api.dictionaryapi.dev/api/v2/entries/en/"
 	urbanBaseURL = "https://api.urbandictionary.com/v0/define?term="
 )
@@ -21,7 +24,12 @@ const (
 // is safe for concurrent use, and LookupAll fans out to both APIs concurrently.
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-func LookupAll(ctx context.Context, word string, sources map[string]bool) *LookupResult {
+// upstream asks the dictionary APIs, again when one fails for a moment.
+var upstream = httputil.Upstream{Client: httpClient, UserAgent: "Localitas Dictionary/1.0"}
+
+// LookupAll asks every enabled source for word. With no definition found, a
+// source that failed (rather than found nothing) is the error.
+func LookupAll(ctx context.Context, word string, sources map[string]bool) (*LookupResult, error) {
 	result := &LookupResult{Word: word, Entries: make([]*DictionaryEntry, 0)}
 
 	type entryResult struct {
@@ -47,13 +55,21 @@ func LookupAll(ctx context.Context, word string, sources map[string]bool) *Looku
 		}()
 	}
 
+	var failed error
 	for i := 0; i < count; i++ {
-		if r := <-ch; r.err == nil {
+		r := <-ch
+		var up *httputil.UpstreamError
+		switch {
+		case r.err == nil:
 			result.Entries = append(result.Entries, r.entry)
+		case errors.As(r.err, &up):
+			failed = r.err
 		}
 	}
-
-	return result
+	if len(result.Entries) == 0 && failed != nil {
+		return result, failed
+	}
+	return result, nil
 }
 
 func Lookup(ctx context.Context, word string) (*DictionaryEntry, error) {
@@ -61,16 +77,9 @@ func Lookup(ctx context.Context, word string) (*DictionaryEntry, error) {
 		return nil, fmt.Errorf("word is required")
 	}
 
-	reqURL := apiBaseURL + url.PathEscape(word)
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	resp, err := upstream.Get(ctx, "dictionary API", apiBaseURL+url.PathEscape(word))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Localitas Dictionary/1.0")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -78,12 +87,12 @@ func Lookup(ctx context.Context, word string) (*DictionaryEntry, error) {
 		return nil, fmt.Errorf("no definition found for '%s'", word)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("dictionary API returned status %d", resp.StatusCode)
+		return nil, &httputil.UpstreamError{Service: "dictionary API", Err: fmt.Errorf("returned %d", resp.StatusCode)}
 	}
 
 	var apiResponses []APIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResponses); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+		return nil, &httputil.UpstreamError{Service: "dictionary API", Err: fmt.Errorf("parse response: %w", err)}
 	}
 
 	if len(apiResponses) == 0 {
@@ -98,26 +107,19 @@ func UrbanLookup(ctx context.Context, word string) (*DictionaryEntry, error) {
 		return nil, fmt.Errorf("word is required")
 	}
 
-	reqURL := urbanBaseURL + url.QueryEscape(word)
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	resp, err := upstream.Get(ctx, "urban dictionary API", urbanBaseURL+url.QueryEscape(word))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Localitas Dictionary/1.0")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("urban dictionary API returned status %d", resp.StatusCode)
+		return nil, &httputil.UpstreamError{Service: "urban dictionary API", Err: fmt.Errorf("returned %d", resp.StatusCode)}
 	}
 
 	var urbanResp UrbanAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&urbanResp); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+		return nil, &httputil.UpstreamError{Service: "urban dictionary API", Err: fmt.Errorf("parse response: %w", err)}
 	}
 
 	if len(urbanResp.List) == 0 {
