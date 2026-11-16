@@ -38,55 +38,68 @@ The app provides a browser-based UI for quick lookups. Type a word and see defin
 
 ## Build & Deploy
 
+Run these in the app's repository, `~/localitas-app-dictionary`.
+
 ### Version
 
 ```bash
-./dictionary-server --version
+bin/dictionary-server --version
 ```
 
 ### Build from source
 
 ```bash
-# Development (native)
-cd apps/dictionary && go build -o bin/dictionary-server ./cmd/dictionary-server
+# Native binary
+go build -o bin/dictionary-server ./cmd/dictionary-server
 
-# Cross-compile for Linux
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -trimpath -o bin/dictionary-server-linux-amd64 ./cmd/dictionary-server
+# Native binary plus the Linux amd64 binary the Docker image is built from (dictionary-server-linux-amd64)
+make build-linux
 ```
+
+`make lint` runs gofmt and go vet; `make test` runs them and then the tests. `make build` runs only the lint step.
+
+### Run natively
+
+```bash
+make start   # writes the launchd service com.localitas.app.dictionary for bin/dictionary-server and loads it on port 9205
+make stop
+make logs    # follows ~/.localitas/logs/dictionary/stdout.log
+```
+
+The app announces itself to core when it starts, and core serves it at `/apps/ext/dictionary/`.
 
 ### Docker
 
-Build a Docker image directly from the binary:
-
 ```bash
-# Default base image (debian:12-slim)
-./dictionary-server docker-build
-
-# Custom base image
-./dictionary-server docker-build --base ubuntu:24.04
-
-# Custom Dockerfile
-./dictionary-server docker-build --dockerfile ./my.Dockerfile
-
-# Tag and push to registry
-./dictionary-server docker-build --tag ghcr.io/localitas/dictionary:latest --push
+make build-docker   # builds the Linux binary and the dictionary:latest image
+make start-docker   # runs container "dictionary" on port 9205, labelled localitas.app=true
+make stop-docker
+make logs-docker
 ```
 
-The `docker-build` command requires a Linux amd64 binary in the same directory. Run `make deploy-build` from the project root first.
+Core registers containers labelled `localitas.app=true` once Docker reports them healthy.
+
+### Publish
+
+```bash
+# Run the tests, build the image, push ghcr.io/localitas/localitas-app-dictionary:latest and :<VERSION>
+make docker-push
+
+# Build dist/dictionary-server-darwin-arm64 and dist/dictionary-server-darwin-amd64
+# and create GitHub release vX.Y.Z on this repository with them
+make release VERSION=vX.Y.Z
+```
+
+`VERSION` defaults to `git describe --tags --always --dirty`.
 
 ### Download
 
-Pre-built binaries are available on the [GitHub releases page](https://github.com/localitas/localitas/releases).
+Pre-built macOS binaries are on the [releases page](https://github.com/localitas/localitas-app-dictionary/releases):
+- `dictionary-server-darwin-arm64` (Apple Silicon)
+- `dictionary-server-darwin-amd64` (Intel)
 
-Each release includes three builds per app:
-- `dictionary-server-darwin-arm64` (macOS Apple Silicon)
-- `dictionary-server-linux-amd64` (Linux x86_64)
-- `dictionary-server-linux-arm64` (Linux ARM64)
+Every push to `main` publishes a release: `.github/workflows/release.yml` runs the tests and releases both binaries as `v0.1.<commit count>.<UTC timestamp>`. `make release` publishes one by hand.
 
 Download with the GitHub CLI:
 
-    gh release download --repo localitas/localitas --pattern 'dictionary-server-*'
-
-### Release
-
-All app binaries are published to GitHub releases as part of `make deploy-upload-image`.
+    gh release download --repo localitas/localitas-app-dictionary --pattern 'dictionary-server-*'
