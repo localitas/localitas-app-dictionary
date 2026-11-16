@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/localitas/localitas-go/httputil"
 )
@@ -18,14 +17,9 @@ var (
 	urbanBaseURL = "https://api.urbandictionary.com/v0/define?term="
 )
 
-// httpClient is a single pooled client shared across all lookups (created once,
-// never per request) so connections to the two upstream dictionary APIs are
-// reused instead of opening a fresh transport on every word lookup. http.Client
-// is safe for concurrent use, and LookupAll fans out to both APIs concurrently.
-var httpClient = &http.Client{Timeout: 10 * time.Second}
-
-// upstream asks the dictionary APIs, again when one fails for a moment.
-var upstream = httputil.Upstream{Client: httpClient, UserAgent: "Localitas Dictionary/1.0"}
+// upstream asks the dictionary APIs, again when one fails for a moment,
+// through the SDK's pooled client, which drops an idle connection a NAT lost.
+var upstream = httputil.Upstream{UserAgent: "Localitas Dictionary/1.0"}
 
 // LookupAll asks every enabled source for word. With no definition found, a
 // source that failed (rather than found nothing) is the error.
