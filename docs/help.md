@@ -52,7 +52,8 @@ bin/dictionary-server --version
 # Native binary (bin/dictionary-server)
 make build
 
-# Linux amd64 binary the Docker image is built from (dictionary-server-linux-amd64)
+# Linux binary the Docker image is built from, for the Docker daemon's
+# architecture (dictionary-server-linux-arm64 on Apple silicon); LINUX_ARCH=amd64 overrides
 make build-linux
 ```
 

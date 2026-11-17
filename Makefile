@@ -10,6 +10,9 @@ PLIST_FILE := $(HOME)/Library/LaunchAgents/$(PLIST_NAME).plist
 LOG_DIR := $(HOME)/.localitas/logs/dictionary
 BIN_PATH := $(shell pwd)/bin/dictionary-server
 WORK_DIR := $(shell pwd)
+# The Docker daemon's architecture: the image's base is pulled for it, so the
+# Linux binary is built for it too and runs natively, not under emulation.
+LINUX_ARCH ?= $(strip $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null || go env GOARCH))
 
 # ── Build & Test ──────────────────────────────────────────────
 
@@ -18,8 +21,8 @@ build: lint
 	go build -o bin/dictionary-server ./cmd/dictionary-server
 
 build-linux: lint
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -trimpath \
-		-o dictionary-server-linux-amd64 ./cmd/dictionary-server
+	GOOS=linux GOARCH=$(LINUX_ARCH) CGO_ENABLED=0 go build -ldflags "-s -w" -trimpath \
+		-o dictionary-server-linux-$(LINUX_ARCH) ./cmd/dictionary-server
 
 test: lint
 	go test -v ./...
@@ -72,7 +75,7 @@ logs-err:
 # ── Docker ────────────────────────────────────────────────────
 
 build-docker: build-linux
-	docker build -t dictionary:latest .
+	docker build --platform linux/$(LINUX_ARCH) -t dictionary:latest .
 
 start-docker: build-docker stop-docker
 	@docker run -d -p $(PORT):8000 --name $(APP_NAME) \
