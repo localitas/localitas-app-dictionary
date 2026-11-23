@@ -6,50 +6,24 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+
+	client "github.com/localitas/localitas-go"
 )
 
-type APIEndpoint struct {
-	Method      string     `json:"method"`
-	Path        string     `json:"path"`
-	Summary     string     `json:"summary"`
-	QueryParams []APIParam `json:"query_params,omitempty"`
-	Response    *APIBody   `json:"response,omitempty"`
-}
-
-type APIParam struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Required    bool   `json:"required"`
-	Description string `json:"description"`
-}
-
-type APIBody struct {
-	ContentType string `json:"content_type"`
-	Example     string `json:"example"`
-}
-
-type APIDoc struct {
-	AppName     string        `json:"app_name"`
-	Version     string        `json:"version"`
-	Description string        `json:"description"`
-	Keywords    []string      `json:"keywords,omitempty"`
-	Endpoints   []APIEndpoint `json:"endpoints"`
-}
-
-var DictionaryAPIDoc = APIDoc{
+var DictionaryAPIDoc = client.APISpec{
 	AppName:     "Dictionary",
 	Version:     "0.1.0",
 	Description: "English dictionary and slang lookup using Free Dictionary API and Urban Dictionary",
 	Keywords:    []string{"dictionary", "define", "definition", "meaning", "word", "synonym", "antonym", "thesaurus", "slang", "vocabulary", "lookup"},
-	Endpoints: []APIEndpoint{
+	Endpoints: []client.APIEndpoint{
 		{
 			Method:  "GET",
 			Path:    "/api/lookup",
 			Summary: "Look up a word definition",
-			QueryParams: []APIParam{
+			QueryParams: []client.APIParam{
 				{Name: "q", Type: "string", Required: true, Description: "The word to look up"},
 			},
-			Response: &APIBody{
+			Response: &client.APIBody{
 				ContentType: "application/json",
 				Example:     `{"word":"hello","phonetic":"/həˈloʊ/","meanings":[{"part_of_speech":"noun","definitions":[{"definition":"An utterance of 'hello'; a greeting.","example":"she was getting hellos from everyone"}]},{"part_of_speech":"verb","definitions":[{"definition":"Say or shout 'hello'."}]}]}`,
 			},
@@ -58,7 +32,7 @@ var DictionaryAPIDoc = APIDoc{
 			Method:  "GET",
 			Path:    "/api/lookup/{word}",
 			Summary: "Look up a word by path parameter",
-			Response: &APIBody{
+			Response: &client.APIBody{
 				ContentType: "application/json",
 				Example:     `{"word":"serendipity","phonetic":"/ˌsɛɹ.ən.ˈdɪp.ə.ti/","meanings":[{"part_of_speech":"noun","definitions":[{"definition":"The occurrence of events by chance in a happy way."}]}]}`,
 			},
@@ -67,11 +41,10 @@ var DictionaryAPIDoc = APIDoc{
 }
 
 func HandleSwagger(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(DictionaryAPIDoc)
+	DictionaryAPIDoc.ServeHTTP(w, r)
 }
 
-func RenderDocsHTML(doc APIDoc) template.HTML {
+func RenderDocsHTML(doc client.APISpec) template.HTML {
 	var sb strings.Builder
 	sb.WriteString(`<h3 style="font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-bottom: 1rem;">API Endpoints</h3><div class="accordion-list">`)
 	for _, ep := range doc.Endpoints {
